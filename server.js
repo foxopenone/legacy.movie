@@ -43,15 +43,36 @@ function requestToken(req) {
   return match ? String(match[1] || "").trim() : "";
 }
 
-/** When STORY_DNA_SERVICE_TOKEN is set, all non-health routes require it. */
+function isPublicRead(req) {
+  if (req.method !== "GET" && req.method !== "HEAD") return false;
+  if (req.path === "/" || req.path === "/health") return true;
+  if (req.path.startsWith("/catalog/")) return true;
+  if (req.path === "/story-dna") return true;
+  if (req.path === "/story-dna/batch") return true;
+  if (/^\/story-dna\/[^/]+$/.test(req.path)) return true;
+  return false;
+}
+
+/** Mutations need STORY_DNA_SERVICE_TOKEN when configured. Catalog/health are public reads. */
 app.use((req, res, next) => {
-  if (req.path === "/health") return next();
+  if (isPublicRead(req)) return next();
   const expected = serviceToken();
   if (!expected) return next();
   if (requestToken(req) !== expected) {
     return res.status(401).json({ ok: false, error: "Unauthorized" });
   }
   return next();
+});
+
+app.get("/", (_req, res) => {
+  res.json({
+    ok: true,
+    service: "legacy.movie",
+    product_ui: "https://catcut.vip/story-dna",
+    health: "/health",
+    catalog: ["/catalog/wikidata/popular", "/catalog/archive/popular", "/catalog/gutendex/popular", "/catalog/search"],
+    note: "This host is the Story DNA API. Browse/ingest UI is on MiniFilm (catcut.vip/story-dna)."
+  });
 });
 
 app.get("/health", (_req, res) => {
@@ -61,7 +82,8 @@ app.get("/health", (_req, res) => {
     sources: ["wikidata", "archive", "gutendex", "mediawiki"],
     ingest: "id-only wikidata|archive|gutendex",
     service_auth: Boolean(serviceToken()),
-    auth: "optional STORY_DNA_SERVICE_TOKEN; XAI_API_KEY; user via X-Story-Dna-User"
+    product_ui: "https://catcut.vip/story-dna",
+    auth: "public catalog GET; mutations need STORY_DNA_SERVICE_TOKEN; XAI_API_KEY for ingest"
   });
 });
 
@@ -78,7 +100,10 @@ app.get("/catalog/search", async (req, res) => {
 
 app.get("/catalog/wikidata/popular", async (req, res) => {
   try {
-    const payload = await listWikidataPopular({ page: req.query.page });
+    const payload = await listWikidataPopular({
+      page: req.query.page,
+      category: req.query.category || req.query.decade
+    });
     res.json({ ok: true, ...payload });
   } catch (error) {
     res.status(Number(error?.status || 500)).json({ ok: false, error: String(error?.message || error) });
@@ -106,7 +131,13 @@ app.get("/catalog/wikidata/:id", async (req, res) => {
 
 app.get("/catalog/archive/popular", async (req, res) => {
   try {
-    res.json({ ok: true, ...(await listArchivePopular({ page: req.query.page })) });
+    res.json({
+      ok: true,
+      ...(await listArchivePopular({
+        page: req.query.page,
+        collection: req.query.collection || req.query.category
+      }))
+    });
   } catch (error) {
     res.status(Number(error?.status || 500)).json({ ok: false, error: String(error?.message || error) });
   }
@@ -136,7 +167,13 @@ app.get("/catalog/archive/:id", async (req, res) => {
 
 app.get("/catalog/gutendex/popular", async (req, res) => {
   try {
-    res.json({ ok: true, ...(await listGutendexPopular({ page: req.query.page })) });
+    res.json({
+      ok: true,
+      ...(await listGutendexPopular({
+        page: req.query.page,
+        topic: req.query.topic || req.query.category
+      }))
+    });
   } catch (error) {
     res.status(Number(error?.status || 500)).json({ ok: false, error: String(error?.message || error) });
   }
