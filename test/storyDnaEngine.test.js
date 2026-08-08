@@ -55,6 +55,7 @@ test("normalizeDna requires all 10 fields", () => {
 
 test("stableDnaId formats source keys", () => {
   assert.equal(stableDnaId("wikidata", "Q603"), "wikidata-Q603");
+  assert.equal(stableDnaId("archive", "sex_madness"), "archive-sex_madness");
   assert.equal(stableDnaId("gutendex", 345), "gutendex-345");
 });
 
@@ -91,7 +92,7 @@ test("manual ingest rejected", async () => {
   await withTempStore(async () => {
     await assert.rejects(
       () => ingestStoryDna({ title: "X", synopsis: "Y", user_id: "u1" }, { extractDna: async () => fullDna() }),
-      /wikidata\|gutendex/
+      /wikidata\|archive\|gutendex/
     );
   });
 });

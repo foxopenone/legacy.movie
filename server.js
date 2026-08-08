@@ -1,9 +1,12 @@
 import express from "express";
 import {
   fetchMediawikiPlot,
+  getArchiveFilm,
   getWikidataFilm,
+  listArchivePopular,
   listGutendexPopular,
   listWikidataPopular,
+  searchArchiveFilms,
   searchCatalogCross,
   searchGutendexCatalog,
   searchWikidataFilms
@@ -55,8 +58,8 @@ app.get("/health", (_req, res) => {
   res.json({
     ok: true,
     service: "legacy.movie",
-    sources: ["wikidata", "gutendex", "mediawiki"],
-    ingest: "id-only wikidata|gutendex",
+    sources: ["wikidata", "archive", "gutendex", "mediawiki"],
+    ingest: "id-only wikidata|archive|gutendex",
     service_auth: Boolean(serviceToken()),
     auth: "optional STORY_DNA_SERVICE_TOKEN; XAI_API_KEY; user via X-Story-Dna-User"
   });
@@ -96,6 +99,36 @@ app.get("/catalog/wikidata/search", async (req, res) => {
 app.get("/catalog/wikidata/:id", async (req, res) => {
   try {
     res.json({ ok: true, item: await getWikidataFilm(req.params.id) });
+  } catch (error) {
+    res.status(Number(error?.status || 500)).json({ ok: false, error: String(error?.message || error) });
+  }
+});
+
+app.get("/catalog/archive/popular", async (req, res) => {
+  try {
+    res.json({ ok: true, ...(await listArchivePopular({ page: req.query.page })) });
+  } catch (error) {
+    res.status(Number(error?.status || 500)).json({ ok: false, error: String(error?.message || error) });
+  }
+});
+
+app.get("/catalog/archive/search", async (req, res) => {
+  try {
+    res.json({
+      ok: true,
+      ...(await searchArchiveFilms(req.query.q || req.query.search, {
+        page: req.query.page,
+        limit: Number(req.query.limit || 20)
+      }))
+    });
+  } catch (error) {
+    res.status(Number(error?.status || 500)).json({ ok: false, error: String(error?.message || error) });
+  }
+});
+
+app.get("/catalog/archive/:id", async (req, res) => {
+  try {
+    res.json({ ok: true, item: await getArchiveFilm(req.params.id) });
   } catch (error) {
     res.status(Number(error?.status || 500)).json({ ok: false, error: String(error?.message || error) });
   }

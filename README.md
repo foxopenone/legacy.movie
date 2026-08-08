@@ -6,8 +6,8 @@ This repository is intentionally **standalone**. It does not include any film-pr
 
 ## What it does
 
-- Catalog browse/search: Wikidata (films), Gutendex (public-domain books), MediaWiki plot enrichment
-- Ingest by public ID only (`wikidata-Q…` / `gutendex-{id}`), with dedupe
+- Catalog browse/search: Wikidata (films), Internet Archive (hosted films), Gutendex (public-domain books), MediaWiki plot enrichment
+- Ingest by public ID only (`wikidata-Q…` / `archive-{identifier}` / `gutendex-{id}`), with dedupe
 - Extract a fixed 10-field DNA card via Grok (`XAI_API_KEY`)
 - Per-user favorites (client-supplied `user_id` / `X-Story-Dna-User`)
 - Batch fetch by DNA ids
@@ -38,7 +38,7 @@ Do not expose ingest/favorites/delete without a token on a public host.
 
 ## Attribution
 
-Film entities: [Wikidata](https://www.wikidata.org/). Plot text may come from Wikipedia via the MediaWiki API. Books: Project Gutenberg via Gutendex.
+Film entities: [Wikidata](https://www.wikidata.org/) and [Internet Archive](https://archive.org/). Plot text may come from Wikipedia via the MediaWiki API. Books: Project Gutenberg via Gutendex.
 
 ## License
 
