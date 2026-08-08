@@ -1,13 +1,12 @@
 import express from "express";
 import {
   fetchMediawikiPlot,
-  getTmdbMovie,
+  getWikidataFilm,
   listGutendexPopular,
-  listTmdbGenres,
-  listTmdbPopular,
+  listWikidataPopular,
   searchCatalogCross,
   searchGutendexCatalog,
-  searchTmdbMovies
+  searchWikidataFilms
 } from "./lib/storyDnaCatalog.js";
 import {
   addUserFavorite,
@@ -56,11 +55,10 @@ app.get("/health", (_req, res) => {
   res.json({
     ok: true,
     service: "legacy.movie",
-    sources: ["tmdb", "gutendex", "mediawiki"],
-    tmdb_configured: Boolean(String(process.env.TMDB_API_KEY || "").trim()),
-    ingest: "id-only tmdb|gutendex",
+    sources: ["wikidata", "gutendex", "mediawiki"],
+    ingest: "id-only wikidata|gutendex",
     service_auth: Boolean(serviceToken()),
-    auth: "optional STORY_DNA_SERVICE_TOKEN; TMDB_API_KEY; XAI_API_KEY; user via X-Story-Dna-User"
+    auth: "optional STORY_DNA_SERVICE_TOKEN; XAI_API_KEY; user via X-Story-Dna-User"
   });
 });
 
@@ -75,38 +73,29 @@ app.get("/catalog/search", async (req, res) => {
   }
 });
 
-app.get("/catalog/tmdb/popular", async (req, res) => {
+app.get("/catalog/wikidata/popular", async (req, res) => {
   try {
-    const payload = await listTmdbPopular({
-      page: req.query.page,
-      genreId: req.query.genre_id || req.query.genre
+    const payload = await listWikidataPopular({ page: req.query.page });
+    res.json({ ok: true, ...payload });
+  } catch (error) {
+    res.status(Number(error?.status || 500)).json({ ok: false, error: String(error?.message || error) });
+  }
+});
+
+app.get("/catalog/wikidata/search", async (req, res) => {
+  try {
+    const payload = await searchWikidataFilms(req.query.q || req.query.search, {
+      limit: Number(req.query.limit || 12)
     });
-    res.json({ ok: true, ...payload, attribution: "Powered by TMDB" });
+    res.json({ ok: true, ...payload });
   } catch (error) {
     res.status(Number(error?.status || 500)).json({ ok: false, error: String(error?.message || error) });
   }
 });
 
-app.get("/catalog/tmdb/search", async (req, res) => {
+app.get("/catalog/wikidata/:id", async (req, res) => {
   try {
-    const payload = await searchTmdbMovies(req.query.q || req.query.search, { page: req.query.page });
-    res.json({ ok: true, ...payload, attribution: "Powered by TMDB" });
-  } catch (error) {
-    res.status(Number(error?.status || 500)).json({ ok: false, error: String(error?.message || error) });
-  }
-});
-
-app.get("/catalog/tmdb/genres", async (_req, res) => {
-  try {
-    res.json({ ok: true, genres: await listTmdbGenres(), attribution: "Powered by TMDB" });
-  } catch (error) {
-    res.status(Number(error?.status || 500)).json({ ok: false, error: String(error?.message || error) });
-  }
-});
-
-app.get("/catalog/tmdb/:id", async (req, res) => {
-  try {
-    res.json({ ok: true, item: await getTmdbMovie(req.params.id) });
+    res.json({ ok: true, item: await getWikidataFilm(req.params.id) });
   } catch (error) {
     res.status(Number(error?.status || 500)).json({ ok: false, error: String(error?.message || error) });
   }
