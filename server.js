@@ -1,0 +1,243 @@
+import express from "express";
+import {
+  fetchMediawikiPlot,
+  getTmdbMovie,
+  listGutendexPopular,
+  listTmdbGenres,
+  listTmdbPopular,
+  searchCatalogCross,
+  searchGutendexCatalog,
+  searchTmdbMovies
+} from "./lib/storyDnaCatalog.js";
+import {
+  addUserFavorite,
+  deleteDnaRecord,
+  getDnaRecord,
+  getDnaRecordsByIds,
+  getUserFavorites,
+  ingestStoryDna,
+  listDnaRecords,
+  listUserFavoriteRecords,
+  removeUserFavorite,
+  setUserFavorites
+} from "./lib/storyDnaEngine.js";
+
+const app = express();
+app.use(express.json({ limit: "2mb" }));
+
+function userFromReq(req) {
+  return String(req.headers["x-story-dna-user"] || req.query.user_id || req.body?.user_id || "").trim();
+}
+
+function serviceToken() {
+  return String(process.env.STORY_DNA_SERVICE_TOKEN || "").trim();
+}
+
+function requestToken(req) {
+  const header = String(req.headers["x-story-dna-token"] || "").trim();
+  if (header) return header;
+  const auth = String(req.headers.authorization || "").trim();
+  const match = auth.match(/^Bearer\s+(.+)$/i);
+  return match ? String(match[1] || "").trim() : "";
+}
+
+/** When STORY_DNA_SERVICE_TOKEN is set, all non-health routes require it. */
+app.use((req, res, next) => {
+  if (req.path === "/health") return next();
+  const expected = serviceToken();
+  if (!expected) return next();
+  if (requestToken(req) !== expected) {
+    return res.status(401).json({ ok: false, error: "Unauthorized" });
+  }
+  return next();
+});
+
+app.get("/health", (_req, res) => {
+  res.json({
+    ok: true,
+    service: "legacy.movie",
+    sources: ["tmdb", "gutendex", "mediawiki"],
+    tmdb_configured: Boolean(String(process.env.TMDB_API_KEY || "").trim()),
+    ingest: "id-only tmdb|gutendex",
+    service_auth: Boolean(serviceToken()),
+    auth: "optional STORY_DNA_SERVICE_TOKEN; TMDB_API_KEY; XAI_API_KEY; user via X-Story-Dna-User"
+  });
+});
+
+app.get("/catalog/search", async (req, res) => {
+  try {
+    const payload = await searchCatalogCross(req.query.q || req.query.search, {
+      limit: Number(req.query.limit || 8)
+    });
+    res.json({ ok: true, ...payload });
+  } catch (error) {
+    res.status(Number(error?.status || 500)).json({ ok: false, error: String(error?.message || error) });
+  }
+});
+
+app.get("/catalog/tmdb/popular", async (req, res) => {
+  try {
+    const payload = await listTmdbPopular({
+      page: req.query.page,
+      genreId: req.query.genre_id || req.query.genre
+    });
+    res.json({ ok: true, ...payload, attribution: "Powered by TMDB" });
+  } catch (error) {
+    res.status(Number(error?.status || 500)).json({ ok: false, error: String(error?.message || error) });
+  }
+});
+
+app.get("/catalog/tmdb/search", async (req, res) => {
+  try {
+    const payload = await searchTmdbMovies(req.query.q || req.query.search, { page: req.query.page });
+    res.json({ ok: true, ...payload, attribution: "Powered by TMDB" });
+  } catch (error) {
+    res.status(Number(error?.status || 500)).json({ ok: false, error: String(error?.message || error) });
+  }
+});
+
+app.get("/catalog/tmdb/genres", async (_req, res) => {
+  try {
+    res.json({ ok: true, genres: await listTmdbGenres(), attribution: "Powered by TMDB" });
+  } catch (error) {
+    res.status(Number(error?.status || 500)).json({ ok: false, error: String(error?.message || error) });
+  }
+});
+
+app.get("/catalog/tmdb/:id", async (req, res) => {
+  try {
+    res.json({ ok: true, item: await getTmdbMovie(req.params.id) });
+  } catch (error) {
+    res.status(Number(error?.status || 500)).json({ ok: false, error: String(error?.message || error) });
+  }
+});
+
+app.get("/catalog/gutendex/popular", async (req, res) => {
+  try {
+    res.json({ ok: true, ...(await listGutendexPopular({ page: req.query.page })) });
+  } catch (error) {
+    res.status(Number(error?.status || 500)).json({ ok: false, error: String(error?.message || error) });
+  }
+});
+
+app.get("/catalog/gutendex/search", async (req, res) => {
+  try {
+    res.json({ ok: true, ...(await searchGutendexCatalog(req.query.q || req.query.search, { page: req.query.page })) });
+  } catch (error) {
+    res.status(Number(error?.status || 500)).json({ ok: false, error: String(error?.message || error) });
+  }
+});
+
+app.get("/catalog/mediawiki/plot", async (req, res) => {
+  try {
+    res.json({ ok: true, ...(await fetchMediawikiPlot(req.query.title || req.query.q)) });
+  } catch (error) {
+    res.status(Number(error?.status || 500)).json({ ok: false, error: String(error?.message || error) });
+  }
+});
+
+app.post("/story-dna/ingest", async (req, res) => {
+  try {
+    const body = { ...(req.body || {}), user_id: userFromReq(req) || req.body?.user_id };
+    const result = await ingestStoryDna(body);
+    res.json({ ok: true, ...result });
+  } catch (error) {
+    console.error("[story-dna-ingest]", error);
+    res.status(Number(error?.status || 500)).json({
+      ok: false,
+      error: String(error?.message || error)
+    });
+  }
+});
+
+app.get("/story-dna", (_req, res) => {
+  try {
+    res.json({ ok: true, items: listDnaRecords() });
+  } catch (error) {
+    res.status(500).json({ ok: false, error: String(error?.message || error) });
+  }
+});
+
+app.get("/story-dna/batch", (req, res) => {
+  try {
+    const raw = String(req.query.ids || "").split(",").map((item) => item.trim()).filter(Boolean);
+    res.json({ ok: true, items: getDnaRecordsByIds(raw) });
+  } catch (error) {
+    res.status(500).json({ ok: false, error: String(error?.message || error) });
+  }
+});
+
+app.get("/story-dna/favorites", (req, res) => {
+  try {
+    const userId = userFromReq(req);
+    const prefs = getUserFavorites(userId);
+    res.json({
+      ok: true,
+      ...prefs,
+      items: listUserFavoriteRecords(userId)
+    });
+  } catch (error) {
+    res.status(Number(error?.status || 500)).json({ ok: false, error: String(error?.message || error) });
+  }
+});
+
+app.put("/story-dna/favorites", (req, res) => {
+  try {
+    const userId = userFromReq(req) || req.body?.user_id;
+    const prefs = setUserFavorites(userId, req.body?.favorite_ids);
+    res.json({ ok: true, ...prefs, items: listUserFavoriteRecords(userId) });
+  } catch (error) {
+    res.status(Number(error?.status || 500)).json({ ok: false, error: String(error?.message || error) });
+  }
+});
+
+app.post("/story-dna/favorites/:id", (req, res) => {
+  try {
+    const userId = userFromReq(req) || req.body?.user_id;
+    const prefs = addUserFavorite(userId, req.params.id);
+    res.json({ ok: true, ...prefs, items: listUserFavoriteRecords(userId) });
+  } catch (error) {
+    res.status(Number(error?.status || 500)).json({ ok: false, error: String(error?.message || error) });
+  }
+});
+
+app.delete("/story-dna/favorites/:id", (req, res) => {
+  try {
+    const userId = userFromReq(req) || req.body?.user_id;
+    const prefs = removeUserFavorite(userId, req.params.id);
+    res.json({ ok: true, ...prefs, items: listUserFavoriteRecords(userId) });
+  } catch (error) {
+    res.status(Number(error?.status || 500)).json({ ok: false, error: String(error?.message || error) });
+  }
+});
+
+app.get("/story-dna/:id", (req, res) => {
+  try {
+    res.json({ ok: true, record: getDnaRecord(req.params.id) });
+  } catch (error) {
+    res.status(Number(error?.status || 500)).json({
+      ok: false,
+      error: String(error?.message || error)
+    });
+  }
+});
+
+app.delete("/story-dna/:id", (req, res) => {
+  try {
+    res.json({ ok: true, ...deleteDnaRecord(req.params.id) });
+  } catch (error) {
+    res.status(Number(error?.status || 500)).json({
+      ok: false,
+      error: String(error?.message || error)
+    });
+  }
+});
+
+const port = Number(process.env.PORT || 8791);
+if (process.env.STORY_DNA_NO_LISTEN !== "1") {
+  app.listen(port, () => {
+    console.log(`story-dna-engine listening on :${port}`);
+  });
+}
+
+export default app;
