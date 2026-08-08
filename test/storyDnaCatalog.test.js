@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   listArchivePopular,
   listGutendexPopular,
+  listWikidataPopular,
   normalizeArchiveId,
   normalizeWikidataId,
   searchArchiveFilms,
@@ -34,6 +35,19 @@ test("searchWikidataFilms finds film entities", async () => {
   assert.ok(payload.results.length > 0);
   assert.equal(payload.results[0].source_kind, "wikidata");
   assert.match(String(payload.results[0].id), /^Q\d+$/);
+});
+
+test("listWikidataPopular fills posters and prefers covers first", async () => {
+  const payload = await listWikidataPopular({ page: 1, category: "all" });
+  assert.ok(Array.isArray(payload.results));
+  assert.ok(payload.results.length > 0);
+  const withPoster = payload.results.filter((item) => String(item.poster_url || "").trim());
+  assert.ok(withPoster.length >= 3, `expected posters, got ${withPoster.length}`);
+  assert.ok(String(payload.results[0].poster_url || "").trim(), "first card should have a poster");
+  const darkKnight = payload.results.find((item) => item.id === "Q163872");
+  if (darkKnight) {
+    assert.ok(String(darkKnight.poster_url || "").trim(), "Dark Knight should get Wikipedia poster");
+  }
 });
 
 test("listArchivePopular returns feature films", async () => {
